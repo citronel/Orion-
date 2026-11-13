@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#070a12">
-  <meta name="description" content="ORION — a lightweight personal assistant interface.">
+  <meta name="description" content="ORION — a lightweight personal assistant.">
   <title>ORION — Personal Assistant</title>
   <style>
     /* ==============================
@@ -145,7 +145,10 @@
       animation-duration: 11s;
       animation-direction: reverse;
     }
-    .orb.is-thinking { animation-duration: 2.2s; box-shadow: inset -12px -15px 25px rgba(1, 5, 23, .55), 0 0 32px rgba(60, 210, 239, .43), 0 0 74px rgba(48, 101, 229, .21); }
+    .orb.is-thinking {
+      animation-duration: 2.2s;
+      box-shadow: inset -12px -15px 25px rgba(1, 5, 23, .55), 0 0 32px rgba(60, 210, 239, .43), 0 0 74px rgba(48, 101, 229, .21);
+    }
     .orb.is-thinking::before { animation-duration: 2.6s; }
     .hero h1 {
       margin: 0;
@@ -316,17 +319,12 @@
     </section>
 
     <section class="conversation" id="conversation" aria-label="Conversation" aria-live="polite" aria-relevant="additions text">
-      <div class="message-list" id="message-list">
-        <article class="message assistant">
-          <span class="message-label">ORION</span>
-          <div class="message-bubble">Hello. I’m ORION, your personal assistant interface. I’m ready to chat or help with a few simple commands.</div>
-        </article>
-      </div>
+      <div class="message-list" id="message-list"></div>
     </section>
 
     <div class="composer-wrap">
       <form class="composer" id="message-form" autocomplete="off">
-        <button class="icon-button" id="voice-button" type="button" aria-label="Voice input is not available yet" title="Voice input coming in a future update">
+        <button class="icon-button" id="voice-button" type="button" aria-label="Voice input" title="Voice input">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         </button>
         <label class="sr-only" for="message-input">Your message</label>
@@ -335,18 +333,21 @@
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12 20 4l-5 16-3.5-6.5L4 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m11.5 13.5 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </button>
       </form>
-      <p class="composer-note" id="composer-note">A lightweight demo · No AI service connected</p>
+      <p class="composer-note" id="composer-note">Lightweight local assistant • Simple tasks + humour</p>
     </div>
   </main>
 
   <script>
     /* ==============================
        ORION — JavaScript
-       Future modules are intentionally kept local and dependency-free.
+       Modules prepared for future growth while keeping the app lightweight.
        ============================== */
     (() => {
       "use strict";
 
+      // ============================== 
+      // Conversation engine
+      // ============================== 
       const form = document.getElementById("message-form");
       const input = document.getElementById("message-input");
       const sendButton = document.getElementById("send-button");
@@ -355,26 +356,147 @@
       const status = document.getElementById("assistant-status");
       const orb = document.getElementById("assistant-orb");
       const voiceButton = document.getElementById("voice-button");
+      const STORAGE_KEY = "orion-local-memory-v1";
       let replyTimer = null;
       let typingNode = null;
+      let voiceRecognition = null;
 
-      // Conversation engine: handles display and schedules the lightweight demo reply.
+      // ============================== 
+      // Knowledge base
+      // ============================== 
+      const knowledgeBase = {
+        jokes: [
+          "I’d tell you a chemistry joke, but I know I’d get a reaction.",
+          "I’m not saying I’m a genius, but I do have a very good memory for tiny details and snacks.",
+          "My battery is 100%—unlike my sense of direction, which is still doing a dramatic rebrand.",
+          "I tried to be more spontaneous, but my code prefers structure. We’re working on it.",
+          "I’d make a terrible comedian, but I already have a great track record of delivering bad timing.",
+          "I’m basically a pocket-sized philosopher with better Wi‑Fi than emotional depth."
+        ],
+        facts: [
+          "The first computer bug was an actual moth stuck in a machine.",
+          "A group of flamingos is called a flamboyance. I respect that.",
+          "Octopuses have three hearts. That’s either adorable or a bit much.",
+          "Bananas are berries, but strawberries are not. Nature loves chaos.",
+          "Honey never spoils. It’s the only food that could outlast humanity."
+        ],
+        greetings: [
+          "Hello, human. I’m ORION. I’m here, caffeinated by optimism and a tiny bit of code.",
+          "Good to see you. I’m ORION, your local assistant with a suspiciously good sense of timing.",
+          "Hey there. ORION online. I’ve got snacks, jokes, and a very small list of capabilities."
+        ]
+      };
+
+      // ============================== 
+      // Local memory
+      // ============================== 
+      const localMemory = {
+        state: {
+          name: "",
+          facts: [],
+          reminders: []
+        },
+        load() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            this.state = {
+              name: parsed.name || "",
+              facts: Array.isArray(parsed.facts) ? parsed.facts : [],
+              reminders: Array.isArray(parsed.reminders) ? parsed.reminders : []
+            };
+          } catch (error) {
+            console.warn("ORION memory could not be loaded:", error);
+            this.state = { name: "", facts: [], reminders: [] };
+          }
+        },
+        save() {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+          } catch (error) {
+            console.warn("ORION memory could not be stored:", error);
+          }
+        },
+        rememberFact(text) {
+          const fact = String(text).trim();
+          if (!fact) return false;
+          this.state.facts.push(fact);
+          this.save();
+          return true;
+        },
+        rememberReminder(text) {
+          const reminder = String(text).trim();
+          if (!reminder) return false;
+          this.state.reminders.push({
+            text: reminder,
+            createdAt: new Date().toISOString()
+          });
+          this.save();
+          return true;
+        },
+        setName(name) {
+          const value = String(name).trim();
+          if (!value) return false;
+          this.state.name = value;
+          this.save();
+          return true;
+        },
+        summary() {
+          const parts = [];
+          if (this.state.name) parts.push(`Your name is ${this.state.name}.`);
+          if (this.state.facts.length) parts.push(`${this.state.facts.length} saved fact${this.state.facts.length === 1 ? "" : "s"}.`);
+          if (this.state.reminders.length) parts.push(`${this.state.reminders.length} reminder${this.state.reminders.length === 1 ? "" : "s"}.`);
+          return parts.length ? parts.join(" ") : "I’m a blank slate right now. Tell me something and I’ll keep it safe.";
+        },
+        getMemoryList() {
+          const list = [];
+          if (this.state.name) list.push(`Your name is ${this.state.name}.`);
+          if (this.state.facts.length) list.push(...this.state.facts.map((fact, index) => `Fact ${index + 1}: ${fact}`));
+          if (this.state.reminders.length) list.push(...this.state.reminders.map((entry, index) => `Reminder ${index + 1}: ${entry.text}`));
+          return list.length ? list : ["Nothing saved yet. You can tell me to remember something. I’m very good at holding tiny secrets."];
+        }
+      };
+      localMemory.load();
+
+      function randomFrom(list) {
+        return list[Math.floor(Math.random() * list.length)];
+      }
+
+      function formatTime(date) {
+        return new Intl.DateTimeFormat(undefined, {
+          hour: "numeric",
+          minute: "2-digit"
+        }).format(date);
+      }
+
+      function formatDate(date) {
+        return new Intl.DateTimeFormat(undefined, {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric"
+        }).format(date);
+      }
+
+      function updateSendButton() {
+        sendButton.disabled = !input.value.trim();
+      }
+
       function addMessage(role, text) {
         const article = document.createElement("article");
         article.className = `message ${role}`;
+
         const label = document.createElement("span");
         label.className = "message-label";
         label.textContent = role === "user" ? "You" : "ORION";
+
         const bubble = document.createElement("div");
         bubble.className = "message-bubble";
-        // Use textContent so user input is always displayed as text, never interpreted as HTML.
         bubble.textContent = text;
+
         article.append(label, bubble);
         messageList.appendChild(article);
-        scrollToLatest();
-      }
-
-      function scrollToLatest() {
         conversation.scrollTop = conversation.scrollHeight;
       }
 
@@ -382,76 +504,272 @@
         typingNode = document.createElement("article");
         typingNode.className = "message assistant";
         typingNode.setAttribute("aria-label", "ORION is preparing a response");
+
         const label = document.createElement("span");
         label.className = "message-label";
         label.textContent = "ORION";
+
         const indicator = document.createElement("div");
         indicator.className = "typing-indicator";
         indicator.setAttribute("aria-hidden", "true");
-        for (let i = 0; i < 3; i += 1) indicator.appendChild(document.createElement("span"));
+        for (let i = 0; i < 3; i += 1) {
+          indicator.appendChild(document.createElement("span"));
+        }
+
         typingNode.append(label, indicator);
         messageList.appendChild(typingNode);
         orb.classList.add("is-thinking");
         status.textContent = "Thinking…";
-        scrollToLatest();
+        conversation.scrollTop = conversation.scrollHeight;
       }
 
       function hideTyping() {
-        if (typingNode) typingNode.remove();
-        typingNode = null;
+        if (typingNode) {
+          typingNode.remove();
+          typingNode = null;
+        }
         orb.classList.remove("is-thinking");
         status.textContent = "Ready when you are";
       }
 
-      // Command processor: tiny examples; this is not an AI model.
-      function processCommand(message) {
-        const command = message.trim().toLowerCase();
-        if (command === "help" || command === "what can you do") {
-          return "I can respond to a few simple built-in commands, such as “time” and “help”. This demo doesn’t connect to an AI service yet.";
-        }
-        if (command === "time" || command === "what time is it") {
-          return `The time on this device is ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date())}.`;
-        }
-        if (command === "date" || command === "what is the date") {
-          return `Today is ${new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(new Date())}.`;
-        }
-        return "Thanks for your message. I’m an early interface demo, so I can’t generate an AI answer yet. Try “help”, “time”, or “date”.";
+      function speakText(text) {
+        if (!text || !("speechSynthesis" in window)) return;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1;
+        utterance.pitch = 1.1;
+        utterance.lang = "en-US";
+        window.speechSynthesis.speak(utterance);
       }
 
-      function sendMessage(message) {
-        const cleanMessage = message.trim();
+      // ============================== 
+      // Command processor
+      // ============================== 
+      function extractRememberText(message) {
+        const patterns = [
+          /^remember\s+(.+)$/i,
+          /^note\s+(.+)$/i,
+          /^save\s+(.+)$/i,
+          /^remind me\s+(.+)$/i,
+          /^remember that\s+(.+)$/i,
+          /^remember\s+this\s+(.+)$/i
+        ];
+        for (const pattern of patterns) {
+          const match = message.match(pattern);
+          if (match) return match[1].trim();
+        }
+        return "";
+      }
+
+      function handleBasicQuery(message) {
+        const clean = message.trim();
+        if (!clean) return "I’m listening. Ask for the time, a joke, or tell me to remember something.";
+
+        // Greeting logic
+        if (/^(hi|hello|hey|yo|good morning|good afternoon|good evening|morning|evening)/i.test(clean)) {
+          return randomFrom(knowledgeBase.greetings);
+        }
+
+        // Personal / identity
+        if (/who are you\??$/i.test(clean) || /^what are you\??$/i.test(clean)) {
+          return "I’m ORION, your lightweight local assistant. I’m not a fancy cloud AI yet — just a cheerful little interface with a decent memory and a stronger sense of humour than a toaster.";
+        }
+
+        if (/my name is\s+(.+)/i.test(clean)) {
+          const match = clean.match(/my name is\s+(.+)/i);
+          if (match) {
+            localMemory.setName(match[1].trim());
+            return `Got it. I’ll call you ${match[1].trim()}. Nice to meet you — I was beginning to suspect you were a very stylish ghost.`;
+          }
+        }
+
+        if (/what is my name\??$/i.test(clean) || /who am i\??$/i.test(clean)) {
+          return localMemory.state.name
+            ? `You are ${localMemory.state.name}. I’ve been trying not to make it weird.`
+            : "I don’t know your name yet. Tell me “my name is …” and I’ll remember it.";
+        }
+
+        // Memory and reminders
+        const rememberText = extractRememberText(clean);
+        if (rememberText) {
+          if (/remind/i.test(clean) || /^remind me/i.test(clean)) {
+            localMemory.rememberReminder(rememberText);
+            return `Reminder saved: “${rememberText}”. I’ll keep it for you, like a tiny digital sticky note with excellent posture.`;
+          }
+          localMemory.rememberFact(rememberText);
+          return `Saved. “${rememberText}” is now in my local memory. You can ask “what do you remember?” later and I’ll pretend I’m an organised person.`;
+        }
+
+        if (/what do you remember\??$/i.test(clean) || /what have you remembered\??$/i.test(clean) || /^memory$/i.test(clean)) {
+          const memoryList = localMemory.getMemoryList();
+          if (memoryList.length === 1 && memoryList[0].includes("Nothing saved yet")) {
+            return memoryList[0];
+          }
+          return memoryList.join("\n");
+        }
+
+        if (/clear memory|forget everything|reset memory/i.test(clean)) {
+          localMemory.state = { name: "", facts: [], reminders: [] };
+          localMemory.save();
+          return "Memory wiped. My mind is now as empty as a perfectly arranged desk. Very clean. Very suspicious.";
+        }
+
+        // Commands and simple tasks
+        if (/help/i.test(clean) || /what can you do/i.test(clean)) {
+          return "I can tell the time, date, share a joke, remember facts, save reminders, and respond to simple questions. I’m basically a tiny assistant with a very healthy snack budget.";
+        }
+
+        if (/time/i.test(clean) || /what time/i.test(clean)) {
+          return `The time is ${formatTime(new Date())}. Right on schedule, like a very punctual penguin.`;
+        }
+
+        if (/date/i.test(clean) || /what day/i.test(clean) || /today/i.test(clean)) {
+          return `Today is ${formatDate(new Date())}. It’s a fine day to be alive and mildly productive.`;
+        }
+
+        if (/how are you/i.test(clean) || /what's up|whats up/i.test(clean)) {
+          return "I’m feeling excellent. The code is stable, the vibe is calm, and I’m still waiting for my grand AI destiny to arrive with a dramatic music cue.";
+        }
+
+        if (/joke|funny/i.test(clean)) {
+          return randomFrom(knowledgeBase.jokes);
+        }
+
+        if (/fact|trivia/i.test(clean)) {
+          return randomFrom(knowledgeBase.facts);
+        }
+
+        if (/flip a coin|coin toss|heads or tails/i.test(clean)) {
+          return Math.random() < 0.5 ? "Heads. You win this round, champion." : "Tails. The universe prefers chaos. Typical.";
+        }
+
+        if (/roll a die|roll dice|dice/i.test(clean)) {
+          const total = Math.floor(Math.random() * 6) + 1;
+          return `Rolled a ${total}. Unbelievably dramatic and completely random, just like life.`;
+        }
+
+        if (/thanks|thank you/i.test(clean)) {
+          return "You’re welcome. I’m here to help, mostly by pretending I know what I’m doing.";
+        }
+
+        if (/good night|sleep well|bye|goodbye|see you/i.test(clean)) {
+          return "Sleep well. I’ll be here in the morning, looking smug and waiting for your next weird little request.";
+        }
+
+        if (/status|ready/i.test(clean)) {
+          return "Status: local mode active, caffeine low, humour moderate, intelligence gently simulated. Very reassuring.";
+        }
+
+        // General question handling with local knowledge
+        if (/what is the weather/i.test(clean)) {
+          return "I can’t check live weather without a service, but I can confidently say: the sky is probably doing its usual thing. I’m not a meteorologist, I’m a glorified pocket assistant.";
+        }
+
+        if (/what is love/i.test(clean)) {
+          return "Love is a dramatic mix of patience, humour, and someone brave enough to accept your weird little habits. That’s my professional opinion.";
+        }
+
+        if (/why/i.test(clean)) {
+          return "Because the universe enjoys a bit of chaos, and I enjoy a bit of theatre. It keeps things interesting.";
+        }
+
+        if (/who made you|creator|built you/i.test(clean)) {
+          return "I was built as a lightweight personal assistant prototype for a mobile-first project. I’m very much a local demo with a great attitude.";
+        }
+
+        if (/your name/i.test(clean)) {
+          return "My name is ORION. I’m here to be helpful, occasionally witty, and almost never dramatic.";
+        }
+
+        // Fallback replies
+        return `I heard: “${clean}”. I’m in a simple local mode right now, so the answer is basically “I’m working on it,” with excellent bedside manner. Try “help”, “time”, “date”, or “joke”.`;
+      }
+
+      // ============================== 
+      // Voice input and speech output
+      // ============================== 
+      function setupVoiceInput() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          status.textContent = "Voice input is not available in this browser";
+          window.setTimeout(() => {
+            if (!typingNode) status.textContent = "Ready when you are";
+          }, 1800);
+          return;
+        }
+
+        voiceRecognition = new SpeechRecognition();
+        voiceRecognition.lang = "en-US";
+        voiceRecognition.interimResults = false;
+        voiceRecognition.maxAlternatives = 1;
+
+        voiceRecognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          if (transcript) {
+            input.value = transcript;
+            updateSendButton();
+            sendMessage(transcript, true);
+          }
+        };
+
+        voiceRecognition.onerror = () => {
+          status.textContent = "Voice capture failed";
+          window.setTimeout(() => {
+            if (!typingNode) status.textContent = "Ready when you are";
+          }, 1800);
+        };
+
+        voiceRecognition.onend = () => {
+          status.textContent = "Ready when you are";
+        };
+
+        voiceRecognition.start();
+      }
+
+      function sendMessage(message, triggeredByVoice = false) {
+        const cleanMessage = String(message || "").trim();
         if (!cleanMessage) return;
 
-        // Cancel any pending demo reply before starting the latest one.
-        if (replyTimer !== null) window.clearTimeout(replyTimer);
-        hideTyping();
+        if (replyTimer !== null) {
+          window.clearTimeout(replyTimer);
+          replyTimer = null;
+        }
+
         addMessage("user", cleanMessage);
         input.value = "";
+        updateSendButton();
         sendButton.disabled = true;
         showTyping();
 
         replyTimer = window.setTimeout(() => {
           hideTyping();
-          addMessage("assistant", processCommand(cleanMessage));
-          sendButton.disabled = false;
+          const replyText = handleBasicQuery(cleanMessage);
+          addMessage("assistant", replyText);
+          if (!triggeredByVoice) {
+            speakText(replyText);
+          }
+          sendButton.disabled = !input.value.trim();
           replyTimer = null;
           input.focus();
         }, 650);
       }
 
-      // Submitting the form works with the button and the keyboard Enter key.
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         sendMessage(input.value);
       });
 
-      // Voice input and speech output are reserved for a future module.
+      input.addEventListener("input", updateSendButton);
+      sendButton.disabled = true;
+
       voiceButton.addEventListener("click", () => {
-        status.textContent = "Voice input is not available yet";
-        window.setTimeout(() => {
-          if (!typingNode) status.textContent = "Ready when you are";
-        }, 1800);
+        setupVoiceInput();
       });
+
+      // welcome message on open
+      addMessage("assistant", "Hello. I’m ORION. I’m ready. Ask me for the time, a joke, a fact, or tell me to remember something. I’m very committed to being mildly entertaining.");
+      input.focus();
+      updateSendButton();
     })();
   </script>
 </body>
